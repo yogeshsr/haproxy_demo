@@ -1,0 +1,27 @@
+version: "3"
+services:
+
+  load_test:
+    build: .
+    stdin_open: true
+    networks:
+      - nw1
+
+  app:
+    build: ./node-app
+    networks:
+      - nw1
+
+  app1:
+    build: ./node-app
+    networks:
+      - nw2
+
+networks:
+  nw1:
+    external:
+      name: nw1
+  nw2:
+    external:
+      name: nw2
+

@@ -1,0 +1,29 @@
+version: "3"
+services:
+
+  proxy:
+    build:
+      context:
+        ./haproxy_config
+      dockerfile:
+        Dockerfile
+      args:
+        - haconfig
+    ports:
+      - "8000:80"
+      - "1936:1936"
+    networks:
+      - nw1
+      - nw2
+
+    extra_hosts:
+      # HACK for multiple source ip from backend server; reconnect to nw2 after container is started 
+     - "proxy_2:192.168.0.3"
+
+networks:
+  nw1:
+    external:
+      name: nw1
+  nw2:
+    external:
+      name: nw2

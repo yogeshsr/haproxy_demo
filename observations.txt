@@ -1,0 +1,141 @@
+
+30s rate=50 sequential
+api|99%
+fast|10
+slow|20
+
+
+
+docker run -d --ulimit nofile=98304:98304 --name elasticsearch ...
+http://blog.mact.me/2014/10/22/yosemite-upgrade-changes-open-file-limit
+https://www.osc.edu/resources/getting_started/howto/howto_use_ulimit_command_to_set_soft_limits
+https://blog.dekstroza.io/ulimit-shenanigans-on-osx-el-capitan/
+
+
+
+------------------------------------------------------------------
+Each request to ha needs 2 ports, one for FE and 1 for backend server.
+So there will be limit on this which is over how much an IP can have ports.
+
+To increase this limit, a source IP can be provided over backend server.
+This IP will be used to connect to the server.
+
+docker-compost will default assign an ip to ha container.
+
+docker network create simple-network
+docker network ls
+docker ps
+docker network connect simple-network container_id
+
+may be,
+docker restart container_id
+
+But, request to ha is failing for the backend with source.
+Verified that,
+app-container is able to connect the simple-network assigned ha-ip,
+ha- with new IP is able to receive request.
+
+The issue was app1 was assigned default n/w. Instead changing the docker-compose to use external n/w for app1 resoolved 503.
+
+
+
+https://docs.docker.com/v17.09/engine/userguide/networking/work-with-networks/#create-networks
+https://hostpresto.com/community/tutorials/networking-with-docker-containers/
+* \/
+https://www.linangran.com/?p=547
+
+sudo apt update
+sudo apt install net-tools
+ping-utils
+
+------------------------------------------------------------------
+
+
+
+netstat -ant | awk '{print $6}' | sort | uniq -c | sort -n
+shows establish max 1900
+
+ulimit -a # seems >1m
+
+tips to decrease TIME_WAIT
+http://www.linuxbrigade.com/reduce-time_wait-socket-connections/
+
+
+https://www.linangran.com/?p=547
+ifconfig eth0:1 172.22.0.4
+
+
+
+increased maxconn 10 and resource pool to 10 with queue TO 1 sec
+------------------------------------------------------------------
+echo "GET http://0.0.0.0:8000/fast" | vegeta attack -duration=30s -rate=500 | tee results.bin | vegeta report
+Requests      [total, rate]            15000, 500.04
+Duration      [total, attack, wait]    1m5.464750826s, 29.99762s, 35.467130826s
+Latencies     [mean, 50, 95, 99, max]  3.429667439s, 0s, 23.100571037s, 30.15828171s, 41.781230826s
+Bytes In      [total, mean]            304004, 20.27
+Bytes Out     [total, mean]            0, 0.00
+Success       [ratio]                  18.16%
+Status Codes  [code:count]             0:9944  200:2724  503:2332
+Error Set:
+503 Service Unavailable
+Get http://0.0.0.0:8000/fast: EOF
+Get http://0.0.0.0:8000/fast: read tcp 127.0.0.1:59868->127.0.0.1:8000: read: connection reset by peer
+
+
+we should find the response time of fast? We need to find the tipping point	
+99% 210 ms => 1 conn does 4, for 500 parallel req we need 125
+
+
+
+haproxy_1.cfg
+echo "GET http://0.0.0.0:8000/pool" | vegeta attack -duration=30s -rate=500 | tee results.bin | vegeta report
+
+
+Get http://0.0.0.0:8000/slow: dial tcp 0.0.0.0:0->0.0.0.0:8000: socket: too many open files
+
+echo "GET http://0.0.0.0:8000/slow" | vegeta attack -duration=30s -rate=500 | tee results.bin | vegeta report
+
+
+
+backend
++ slow server
++ maxconn 2
++ timeout queue 6s
+- req send concurrently 6, 2 always failed with 503
+- if FE small maxconn (2) is added then the req goes to some q (socket q), so its not in backend q to be dropped. So we loose ability to drop req in certain time.
+
+If the FE maxconn (same for global maxconn) is set to a low value say 10 (default 2k) then req put to socket queued. Issues
+- req will take longer but each will be served
+- since all the req will be in socket q, overall system becomes slow
+
+Test of FE with small/large maxconn
+
+
+ab -n 100 -c 10 http://0.0.0.0:8000/slow/
+
+-------------- maxconn 4 
+Complete requests:      100
+Failed requests:        2
+  50%  20006
+  66%  20011
+  75%  20013
+  80%  20013
+  90%  20018
+95%  24k
+100%  107k
+------------- with maxconn 30k
+Complete requests:      100
+Failed requests:        66
+50%   6000
+  66%   6004
+  75%   8002
+  80%   8003
+  90%   8031 
+95%   8k (6sec wait in q + 2sec processing time)
+100%   8k (longest request)
+
+
+frontend max conn ? not sure since
+- 6 fast followed by 6 slow request were made
+- why 6 slow went through maxconn was 4
+- is there any queue over FE?

@@ -1,0 +1,37 @@
+global
+  debug                         # uncomment to enable debug mode for HAProxy
+  #maxconn 1000
+  #maxsessrate 5000
+
+defaults
+  mode http                     # enable http mode which gives of layer 7 filtering
+  timeout connect 5000ms        # max time to wait for a connection attempt to a server to succeed
+  timeout client 50000ms        # max inactivity time on the client side
+  timeout server 50000ms        # max inactivity time on the server side
+  #timeout queue 1s
+
+listen hproxy-status
+  bind 0.0.0.0:1936
+  stats enable
+  stats uri /stats
+  stats refresh 15s
+  stats show-node
+
+backend slow_backend
+  #timeout queue 1s
+  server server_1 app:8080
+
+backend fast_backend
+  #timeout queue 2s
+  #server server_1 127.0.0.1:8001 maxqueue 2 maxconn 2
+  server server_1 app1:8080
+
+frontend app
+  bind *:80
+  #maxconn 1000
+
+  acl fast path_beg /fast
+  use_backend fast_backend if fast
+
+  default_backend slow_backend
+
